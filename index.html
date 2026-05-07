@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Phá Phổi</title>
+    <style>
+        :root {
+            --primary-bg: #fff0f5;
+            --canvas-bg: #ffffff;
+            --accent: #ff69b4;
+            --accent-dark: #db7093;
+            --overlay-bg: rgba(255, 255, 255, 0.9);
+        }
+
+        body { 
+            background: var(--primary-bg); 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        #game-container { position: relative; }
+
+        canvas { 
+            border: 4px solid var(--accent); 
+            background: var(--canvas-bg); 
+            box-shadow: 0 10px 30px rgba(255, 105, 180, 0.2); 
+            border-radius: 15px;
+            display: block;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: var(--overlay-bg);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: var(--accent-dark);
+            z-index: 10;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        h1 { font-size: 60px; color: var(--accent); text-shadow: 2px 2px 0px #ffc0cb; margin: 0; }
+        p { color: #888; font-size: 14px; margin: 10px 0 30px; letter-spacing: 2px; font-weight: bold; }
+
+        button {
+            padding: 12px 40px;
+            font-size: 18px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: 0.3s;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+
+        button:hover { 
+            background: var(--accent-dark); 
+            transform: scale(1.05);
+        }
+
+        .ui-score { 
+            position: absolute; top: 15px; left: 20px; 
+            color: var(--accent-dark); font-size: 18px; font-weight: bold;
+        }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div class="ui-score">LÁ PHỔI ĐÃ HỎNG: <span id="scoreDisplay">0</span></div>
+        
+        <div id="startScreen" class="overlay">
+            <h1>PHÁ PHỔI</h1>
+            <p>DI CHUỘT ĐỂ ĐIỀU KHIỂN</p>
+            <button onclick="startGame()">KHỞI ĐỘNG</button>
+        </div>
+
+        <div id="endScreen" class="overlay hidden">
+            <h1 id="endStatus">PHỔI ĐÃ UNG THƯ</h1>
+            <p>Số phổi bị hủy hoại: <span id="finalScore">0</span></p>
+            <button onclick="startGame()">TÁI SINH</button>
+        </div>
+
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const scoreDisplay = document.getElementById("scoreDisplay");
+    const startScreen = document.getElementById("startScreen");
+    const endScreen = document.getElementById("endScreen");
+    const finalScore = document.getElementById("finalScore");
+
+    const vapeImage = new Image();
+    vapeImage.src = '36e5e967cdbab505d8ed257261cf9220-removebg-preview.png'; 
+
+    const lungWhiteImg = new Image();
+    lungWhiteImg.src = '80f193e6ac8f47b12600211e1e9de91d-removebg-preview.png'; 
+
+    const lungBlackImg = new Image();
+    lungBlackImg.src = '80f193e6ac8f47b12600211e1e9de91d-removebg-preview.png'; 
+
+    canvas.width = 700;
+    canvas.height = 600;
+
+    let score, x, y, dx, dy, paddleX, bricks, gameRunning = false;
+    let trail = []; 
+
+    const ballRadius = 10;
+    const paddleWidth = 120;
+    const brickRowCount = 6;
+    const brickColumnCount = 8;
+    const brickPadding = 8;
+    const brickOffsetTop = 70;
+    
+    const brickWidth = (canvas.width - (brickPadding * (brickColumnCount - 1))) / brickColumnCount;
+    const brickHeight = 45;
+
+    function initGame() {
+        score = 0;
+        scoreDisplay.innerText = score;
+        x = canvas.width / 2;
+        y = canvas.height - 120;
+        
+        // CHỈNH SỬA TẠI ĐÂY: Tốc độ tăng từ 4 lên 6 (gấp 1.5 lần)
+        dx = 6;
+        dy = -6;
+        
+        paddleX = (canvas.width - paddleWidth) / 2;
+        trail = []; 
+        
+        bricks = [];
+        for (let c = 0; c < brickColumnCount; c++) {
+            bricks[c] = [];
+            for (let r = 0; r < brickRowCount; r++) {
+                let type = (c + r) % 2 === 0 ? "white" : "black";
+                bricks[c][r] = { x: 0, y: 0, status: 1, type: type };
+            }
+        }
+    }
+
+    function startGame() {
+        initGame();
+        startScreen.classList.add("hidden");
+        endScreen.classList.add("hidden");
+        gameRunning = true;
+        draw();
+    }
+
+    function gameOver(isWin) {
+        gameRunning = false;
+        endScreen.classList.remove("hidden");
+        document.getElementById("endStatus").innerText = isWin ? "CHIẾN THẮNG!" : "PHỔI ĐÃ UNG THƯ";
+        finalScore.innerText = score;
+    }
+
+    document.addEventListener("mousemove", (e) => {
+        let rect = canvas.getBoundingClientRect();
+        let relativeX = e.clientX - rect.left;
+        if (relativeX > 0 && relativeX < canvas.width) {
+            paddleX = relativeX - paddleWidth / 2;
+        }
+    });
+
+    function drawDetailedLung(bx, by, type) {
+        let img = (type === "white") ? lungWhiteImg : lungBlackImg;
+        if (img.complete && img.naturalWidth !== 0) {
+            ctx.drawImage(img, bx, by, brickWidth, brickHeight);
+        } else {
+            ctx.fillStyle = (type === "white") ? "#ffe4e1" : "#ffb6c1";
+            ctx.fillRect(bx, by, brickWidth, brickHeight);
+        }
+    }
+
+    function drawSmokeWithTrail() {
+        trail.push({x: x, y: y});
+        if (trail.length > 15) trail.shift(); 
+
+        trail.forEach((pos, i) => {
+            let ratio = i / trail.length;
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, ballRadius * (0.6 + ratio), 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 182, 193, ${ratio * 0.4})`;
+            ctx.fill();
+        });
+
+        ctx.beginPath();
+        let grad = ctx.createRadialGradient(x, y, 0, x, y, ballRadius + 5);
+        grad.addColorStop(0, "white");
+        grad.addColorStop(1, "rgba(255, 192, 203, 0)");
+        ctx.fillStyle = grad;
+        ctx.arc(x, y, ballRadius + 8, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    function drawVapeImage() {
+        if (vapeImage.complete && vapeImage.naturalWidth !== 0) {
+            ctx.drawImage(vapeImage, paddleX, canvas.height - 95, paddleWidth, 90);
+        } else {
+            ctx.fillStyle = "#ff69b4"; 
+            ctx.fillRect(paddleX, canvas.height - 30, paddleWidth, 15);
+        }
+    }
+
+    function collisionDetection() {
+        for (let c = 0; c < brickColumnCount; c++) {
+            for (let r = 0; r < brickRowCount; r++) {
+                let b = bricks[c][r];
+                if (b.status === 1) {
+                    if (x > b.x && x < b.x + brickWidth && y > b.y && y < b.y + brickHeight) {
+                        dy = -dy;
+                        b.status = 0;
+                        score++;
+                        scoreDisplay.innerText = score;
+                        if (score === brickRowCount * brickColumnCount) gameOver(true);
+                    }
+                }
+            }
+        }
+    }
+
+    function draw() {
+        if (!gameRunning) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        for (let c = 0; c < brickColumnCount; c++) {
+            for (let r = 0; r < brickRowCount; r++) {
+                if (bricks[c][r].status === 1) {
+                    let bx = (c * (brickWidth + brickPadding));
+                    let by = (r * (brickHeight + brickPadding)) + brickOffsetTop;
+                    bricks[c][r].x = bx;
+                    bricks[c][r].y = by;
+                    drawDetailedLung(bx, by, bricks[c][r].type);
+                }
+            }
+        }
+
+        drawSmokeWithTrail();
+        drawVapeImage();
+        collisionDetection();
+
+        if (x + dx > canvas.width - ballRadius || x + dx < ballRadius) dx = -dx;
+        if (y + dy < ballRadius) dy = -dy;
+        else if (y + dy > canvas.height - 35) {
+            if (x > paddleX && x < paddleX + paddleWidth) {
+                dy = -dy;
+            } else if (y + dy > canvas.height) {
+                gameOver(false);
+                return;
+            }
+        }
+
+        x += dx;
+        y += dy;
+        requestAnimationFrame(draw);
+    }
+</script>
+</body>
+</html>
